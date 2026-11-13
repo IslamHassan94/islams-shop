@@ -1,0 +1,33 @@
+{
+  "name": "islams-shop",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "tsc --noEmit",
+    "test:e2e": "playwright test",
+    "db:seed:local": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f db/islams_shop_seed.sql"
+  },
+  "dependencies": {
+    "@aws-sdk/client-rds-data": "^3.1168.0",
+    "bcryptjs": "^3.0.3",
+    "jose": "^6.2.17",
+    "next": "^15.5.29",
+    "pg": "^8.23.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.0",
+    "@tailwindcss/postcss": "^4.3.5",
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "postcss": "^8.5.32",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^5.9.3"
+  }
+}
