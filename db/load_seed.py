@@ -16,8 +16,9 @@ import sys
 
 
 def split_statements(sql: str):
-    # Drop full-line comments, then split on ';' at end of a line.
-    lines = [l for l in sql.splitlines() if not l.strip().startswith("--")]
+    # Drop full-line comments and trailing "-- ..." comments (the seed has no "--" inside
+    # string literals), then split on ';' at the end of a line.
+    lines = [re.sub(r"\s+--[^']*$", "", l) for l in sql.splitlines() if not l.strip().startswith("--")]
     body = "\n".join(lines)
     parts = re.split(r";\s*(?:\n|$)", body)
     return [p.strip() for p in parts if p.strip()]
