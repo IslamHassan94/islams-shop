@@ -1,17 +1,39 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
+import { createHmac } from "crypto";
+import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
 import { db } from "./db";
+import { AWS_REGION, awsCredentials } from "./aws";
 
 export const SESSION_COOKIE = "is_session";
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 
 export type Session = { customerId: number; email: string; firstName: string };
 
-function secret() {
+let derivedKey: Promise<Uint8Array> | undefined;
+
+/**
+ * JWT signing key. Uses SESSION_SECRET when set. Otherwise (Data API mode) it is derived from the
+ * database secret in Secrets Manager, which the app is already allowed to read, so no extra secret
+ * has to be stored in Vercel. RDS rotates that password every 7 days; sessions then simply expire.
+ */
+async function secret(): Promise<Uint8Array> {
   const s = process.env.SESSION_SECRET;
-  if (!s || s.length < 16) throw new Error("SESSION_SECRET must be set (16+ chars)");
-  return new TextEncoder().encode(s);
+  if (s && s.length >= 16) return new TextEncoder().encode(s);
+  const secretArn = process.env.DB_SECRET_ARN;
+  if (!secretArn) throw new Error("Set SESSION_SECRET (16+ chars) or DB_SECRET_ARN");
+  derivedKey ??= (async () => {
+    const sm = new SecretsManagerClient({ region: AWS_REGION, credentials: awsCredentials() });
+    const res = await sm.send(new GetSecretValueCommand({ SecretId: secretArn }));
+    const password = JSON.parse(res.SecretString ?? "{}").password as string | undefined;
+    if (!password) throw new Error("DB secret has no password field");
+    return new Uint8Array(createHmac("sha256", password).update("islams-shop/session-jwt/v1").digest());
+  })().catch((e) => {
+    derivedKey = undefined;
+    throw e;
+  });
+  return derivedKey;
 }
 
 export async function createSessionCookie(session: Session) {
@@ -19,7 +41,7 @@ export async function createSessionCookie(session: Session) {
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${MAX_AGE_SECONDS}s`)
-    .sign(secret());
+    .sign(await secret());
   (await cookies()).set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
@@ -37,7 +59,7 @@ export async function getSession(): Promise<Session | null> {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
   try {
-    const { payload } = await jwtVerify(token, secret());
+    const { payload } = await jwtVerify(token, await secret());
     return {
       customerId: Number(payload.customerId),
       email: String(payload.email),

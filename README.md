@@ -35,9 +35,16 @@ python3 load_seed.py --cluster-arn "<CLUSTER_ARN>" --secret-arn "<SECRET_ARN>"
 
 Both ARNs are on the cluster's **Configuration** tab (ARN, and "Master credentials ARN"). Re-run any time to reset all data.
 
-## 3. Create an IAM user for the website
+## 3. Let Vercel reach AWS without keys (OIDC federation)
 
-IAM → Users → **Create user** `islams-shop-app` (no console access) → **Attach policies directly → Create policy → JSON**:
+The app gets short-lived AWS credentials from Vercel's OIDC token, so no access key is stored anywhere.
+
+1. **IAM → Identity providers → Add provider** → OpenID Connect
+   - Provider URL: `https://oidc.vercel.com/<TEAM_SLUG>` · Audience: `https://vercel.com/<TEAM_SLUG>`
+2. **IAM → Roles → Create role** → Web identity → that provider. Trust policy conditions:
+   - `oidc.vercel.com/<TEAM_SLUG>:aud` = `https://vercel.com/<TEAM_SLUG>`
+   - `oidc.vercel.com/<TEAM_SLUG>:sub` like `owner:<TEAM_SLUG>:project:islams-shop:environment:production` (and `:preview`)
+3. Attach this permission policy to the role:
 
 ```json
 {
@@ -58,26 +65,25 @@ IAM → Users → **Create user** `islams-shop-app` (no console access) → **At
 }
 ```
 
-Then the user → **Security credentials → Create access key** → "Application running outside AWS". Copy the key ID and secret (you'll only see the secret once).
-
 ## 4. Deploy to Vercel (free)
 
-1. Push this folder to a GitHub repo (keep `.env.local` out; it's in `.gitignore`).
-2. [vercel.com](https://vercel.com) → sign in with GitHub → **Add New → Project** → import the repo.
-3. **Environment Variables** (Vercel reserves `AWS_*` names, so the app uses `APP_AWS_*`):
+1. Import the GitHub repo in Vercel (Add New → Project).
+2. **Environment Variables** (Vercel reserves some `AWS_*` names, so the app uses `APP_AWS_*`):
 
 | Name | Value |
 |---|---|
 | `DB_DRIVER` | `dataapi` |
 | `APP_AWS_REGION` | `eu-central-1` |
-| `APP_AWS_ACCESS_KEY_ID` | from step 3 |
-| `APP_AWS_SECRET_ACCESS_KEY` | from step 3 |
+| `APP_AWS_ROLE_ARN` | role ARN from step 3 |
 | `DB_CLUSTER_ARN` | cluster ARN |
 | `DB_SECRET_ARN` | secret ARN |
 | `DB_NAME` | `postgres` |
-| `SESSION_SECRET` | output of `openssl rand -base64 32` |
 
-4. **Deploy**, then open `https://<your-app>.vercel.app/api/health` → `{"status":"ok","db":"up"}`.
+`SESSION_SECRET` is optional here: without it the login-cookie signing key is derived from the DB secret.
+Static keys (`APP_AWS_ACCESS_KEY_ID` / `APP_AWS_SECRET_ACCESS_KEY`) still work if you prefer them over OIDC.
+
+3. Settings → Deployment Protection: keep Vercel Authentication for **preview** only, so the production URL is public.
+4. Deploy, then open `https://<your-app>.vercel.app/api/health` → `{"status":"ok","db":"up"}`.
 
 > **Cold starts:** with min capacity 0 ACU, Aurora pauses after idle time. The first request then takes ~15 s while it resumes (the app retries automatically). That's the price of near-zero cost.
 
@@ -117,7 +123,7 @@ BASE_URL=https://<your-app>.vercel.app npm run test:e2e      # against productio
 
 ## Security & cost notes
 - The site uses the master DB user via its secret. For extra practice, create a dedicated DB user with only the grants the app needs and store its credentials in a separate secret.
-- Never commit access keys. Rotate the key if it leaks; Vercel's env vars are the only place it should live.
+- Prefer OIDC federation over access keys. If you do use keys, never commit or paste them anywhere; rotate immediately if one leaks.
 - A public site can wake the database (bots, crawlers). Keep your AWS Budget alert on, and **stop/delete the cluster** when you aren't practising.
 - Card numbers are never stored, only brand + last 4.
 

@@ -17,6 +17,7 @@ import {
   type SqlParameter,
 } from "@aws-sdk/client-rds-data";
 import type { Pool, PoolClient } from "pg";
+import { AWS_REGION, awsCredentials } from "./aws";
 
 export type Param = string | number | boolean | null | undefined;
 export type Params = Record<string, Param>;
@@ -80,12 +81,7 @@ let rdsClient: RDSDataClient | undefined;
 
 function dataApi() {
   if (!rdsClient) {
-    const accessKeyId = process.env.APP_AWS_ACCESS_KEY_ID;
-    const secretAccessKey = process.env.APP_AWS_SECRET_ACCESS_KEY;
-    rdsClient = new RDSDataClient({
-      region: process.env.APP_AWS_REGION ?? "eu-central-1",
-      credentials: accessKeyId && secretAccessKey ? { accessKeyId, secretAccessKey } : undefined,
-    });
+    rdsClient = new RDSDataClient({ region: AWS_REGION, credentials: awsCredentials() });
   }
   return rdsClient;
 }
