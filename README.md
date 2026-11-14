@@ -1,5 +1,7 @@
 # Islam's Shop: fitness-wear demo store
 
+**🌐 Live site: https://islams-shop.vercel.app** · [QA playground](https://islams-shop.vercel.app/qa) · [API health](https://islams-shop.vercel.app/api/health)
+
 A full-stack e-commerce site for **test-automation and AI-agent practice**. Next.js (frontend + API) talks to **AWS Aurora PostgreSQL through the RDS Data API**, so the database stays private and the site can run on a free host (Vercel).
 
 ```
