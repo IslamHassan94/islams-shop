@@ -16,10 +16,6 @@ export default function CartPage() {
     if (couponCode) setCouponInput(couponCode);
   }, [couponCode]);
 
-  useEffect(() => {
-    document.title = "Cart · Islam's Shop";
-  }, []);
-
   if (!ready) return <div className="container-x py-16 text-muted">Loading cart…</div>;
 
   if (lines.length === 0)

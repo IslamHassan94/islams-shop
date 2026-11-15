@@ -54,3 +54,35 @@ export const SORTS: Record<string, string> = {
   "price-desc": "Price: high to low",
   rating: "Top rated",
 };
+
+export type DiscountRule = { type: "PERCENT" | "FIXED"; valueCents: number } | null;
+
+/** Discount (in cents) a coupon rule gives on a given subtotal. Mirrors evaluateCoupon(). */
+export function discountForSubtotal(rule: DiscountRule, subtotalCents: number): number {
+  if (!rule) return 0;
+  return rule.type === "PERCENT"
+    ? Math.round((subtotalCents * rule.valueCents) / 10000)
+    : Math.min(rule.valueCents, subtotalCents);
+}
+
+/**
+ * Smallest amount (cents) the shopper must add to their subtotal so that
+ * (subtotal - discount) reaches the free-shipping threshold. The coupon keeps
+ * applying to the added items, so a percent coupon needs more than the naive gap.
+ * Returns 0 if shipping is already free, null if the threshold can never be reached
+ * (for example a 100% coupon).
+ */
+export function amountToFreeShippingCents(subtotalCents: number, rule: DiscountRule): number | null {
+  const net = (extra: number) => subtotalCents + extra - discountForSubtotal(rule, subtotalCents + extra);
+  if (net(0) >= FREE_SHIPPING_THRESHOLD_CENTS) return 0;
+  // net() never decreases as the subtotal grows, so binary-search the smallest extra.
+  let lo = 0;
+  let hi = FREE_SHIPPING_THRESHOLD_CENTS * 100;
+  if (net(hi) < FREE_SHIPPING_THRESHOLD_CENTS) return null;
+  while (hi - lo > 1) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (net(mid) >= FREE_SHIPPING_THRESHOLD_CENTS) hi = mid;
+    else lo = mid;
+  }
+  return hi;
+}
