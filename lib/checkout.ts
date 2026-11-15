@@ -8,6 +8,9 @@ import {
   COUNTRIES,
   FREE_SHIPPING_THRESHOLD_CENTS,
   MAX_QTY_PER_LINE,
+  amountToFreeShippingCents,
+  discountForSubtotal,
+  type DiscountRule,
   SHIPPING_FEE_CENTS,
   formatEUR,
   splitList,
@@ -31,6 +34,8 @@ export type Quote = {
   discountCents: number;
   shippingCents: number;
   totalCents: number;
+  /** Amount to add for free shipping (0 = already free, null = not reachable). */
+  freeShippingRemainingCents: number | null;
   coupon: { code: string; valid: boolean; message: string; couponId?: number } | null;
   valid: boolean;
 };
@@ -98,12 +103,10 @@ async function evaluateCoupon(q: Db, codeRaw: string, subtotalCents: number) {
   if (c.expired) return fail("This coupon has expired");
   if (c.used_up) return fail("This coupon has reached its usage limit");
   if (subtotalCents < c.min_cents) return fail(`Minimum order of ${formatEUR(c.min_cents)} required`);
-  const discountCents =
-    c.discount_type === "PERCENT"
-      ? Math.round((subtotalCents * c.value_cents) / 10000)
-      : Math.min(c.value_cents, subtotalCents);
+  const rule: DiscountRule = { type: c.discount_type === "PERCENT" ? "PERCENT" : "FIXED", valueCents: c.value_cents };
+  const discountCents = discountForSubtotal(rule, subtotalCents);
   const label = c.discount_type === "PERCENT" ? `${c.value_cents / 100}% off` : `${formatEUR(c.value_cents)} off`;
-  return { code: c.code, valid: true, message: `${c.code} applied: ${label}`, discountCents, couponId: c.id };
+  return { code: c.code, valid: true, message: `${c.code} applied: ${label}`, discountCents, couponId: c.id, rule };
 }
 
 type ProductRow = {
@@ -153,10 +156,12 @@ export async function quoteCart(items: CartItemInput[], couponCode?: string | nu
   const subtotalCents = lines.reduce((s, l) => s + l.lineCents, 0);
   let coupon: Quote["coupon"] = null;
   let discountCents = 0;
+  let rule: DiscountRule = null;
   if (couponCode && couponCode.trim()) {
     const c = await evaluateCoupon(q, couponCode, subtotalCents);
     coupon = { code: c.code, valid: c.valid, message: c.message, couponId: "couponId" in c ? c.couponId : undefined };
     discountCents = c.discountCents;
+    if ("rule" in c) rule = c.rule;
   }
   const afterDiscount = subtotalCents - discountCents;
   const shippingCents = afterDiscount >= FREE_SHIPPING_THRESHOLD_CENTS || afterDiscount === 0 ? 0 : SHIPPING_FEE_CENTS;
@@ -166,6 +171,7 @@ export async function quoteCart(items: CartItemInput[], couponCode?: string | nu
     discountCents,
     shippingCents,
     totalCents: afterDiscount + shippingCents,
+    freeShippingRemainingCents: shippingCents === 0 ? 0 : amountToFreeShippingCents(subtotalCents, rule),
     coupon,
     valid: lines.every((l) => !l.error) && (!coupon || coupon.valid),
   };
